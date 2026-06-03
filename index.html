@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Carzilla · Find din næste varebil</title>
+
+<!--
+  CARZILLA — Varebil-guide (KLIKBAR PROTOTYPE)
+  ============================================
+  • Selvstændig fil. Mock-data + rigtig blød top-3 match-logik er indbygget (se MOCK_VANS + scoreVan nederst).
+  • Brandfarver: --yellow #E5FE01 (knapper) · --ink #181818 (tekst). Fra carzilla.dk.
+  • Logo: midlertidig wordmark. Drop det rigtige SVG/PNG ind i <div class="logo"> (markeret nedenfor).
+  • Lavet til iframe-embed på carzilla.dk: cookieless + auto-resize via postMessage (se bunden).
+  • Når vi går videre: spørgsmåls-svar mappes til van_insights.match_vans() RPC; lead-form → carzilla-lead Edge Function.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --yellow:#E5FE01;
+    --yellow-deep:#cfe600;
+    --ink:#181818;
+    --ink-soft:#3a3a3a;
+    --muted:#6b6b6b;
+    --paper:#ffffff;
+    --cloud:#f5f5f2;
+    --line:#e7e7e2;
+    --line-strong:#d8d8d2;
+    --ok:#1c8a4d;
+    --radius:16px;
+    --radius-sm:12px;
+    --shadow:0 1px 2px rgba(24,24,24,.04),0 8px 28px rgba(24,24,24,.06);
+    --shadow-pop:0 10px 40px rgba(24,24,24,.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--cloud)}
+  body{
+    font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    color:var(--ink);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    padding:18px 16px 40px;
+  }
+  .wrap{max-width:600px;margin:0 auto}
+
+  /* ---------- Header ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .logo{display:inline-flex;align-items:center;font-family:'Archivo',sans-serif;font-weight:900;
+    letter-spacing:-.02em;font-size:22px;color:var(--ink);text-decoration:none}
+  .logo .mark{background:var(--yellow);padding:2px 8px;border-radius:7px;margin-right:2px;
+    transform:skewX(-6deg)}
+  .logo .mark span{display:inline-block;transform:skewX(6deg)}
+  .badge{font-size:12px;font-weight:600;color:var(--muted);background:var(--paper);
+    border:1px solid var(--line);padding:5px 11px;border-radius:999px}
+
+  /* ---------- Card shell ---------- */
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden}
+  .card-pad{padding:26px 24px}
+  @media(max-width:440px){.card-pad{padding:22px 18px}}
+
+  /* ---------- Progress ---------- */
+  .progress{display:flex;align-items:center;gap:7px;padding:18px 24px 0}
+  .progress .seg{height:5px;flex:1;background:var(--line);border-radius:999px;overflow:hidden}
+  .progress .seg i{display:block;height:100%;width:0;background:var(--yellow);
+    transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .progress .seg.done i{width:100%}
+  .progress .seg.active i{width:55%}
+  .step-meta{padding:14px 24px 0;font-size:13px;font-weight:600;color:var(--muted);
+    display:flex;justify-content:space-between}
+
+  /* ---------- Hero ---------- */
+  .eyebrow{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink);background:var(--yellow);
+    padding:5px 10px;border-radius:7px;margin-bottom:16px}
+  h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:34px;line-height:1.08;
+    letter-spacing:-.02em;margin-bottom:14px}
+  h1 .u{position:relative;white-space:nowrap}
+  h1 .u::after{content:"";position:absolute;left:-2px;right:-2px;bottom:3px;height:11px;
+    background:var(--yellow);z-index:-1;border-radius:3px}
+  @media(max-width:440px){h1{font-size:28px}}
+  .lead{font-size:16px;color:var(--ink-soft);margin-bottom:24px;max-width:46ch}
+  .hero-points{list-style:none;display:grid;gap:10px;margin-bottom:28px}
+  .hero-points li{display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--ink-soft)}
+  .hero-points svg{flex:none}
+
+  /* ---------- Questions ---------- */
+  .q-title{font-family:'Archivo',sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em;
+    margin-bottom:6px}
+  .q-sub{font-size:14.5px;color:var(--muted);margin-bottom:22px}
+  .opts{display:grid;gap:12px}
+  .opts.two{grid-template-columns:1fr 1fr}
+  @media(max-width:440px){.opts.two{grid-template-columns:1fr}}
+  .opt{display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
+    background:var(--paper);border:1.5px solid var(--line-strong);border-radius:var(--radius-sm);
+    padding:16px 16px;font:inherit;color:var(--ink);transition:.16s ease}
+  .opt:hover{border-color:var(--ink);transform:translateY(-1px);box-shadow:var(--shadow)}
+  .opt.sel{border-color:var(--ink);background:#fffef0;box-shadow:0 0 0 3px var(--yellow)}
+  .opt .ic{flex:none;width:42px;height:42px;border-radius:10px;background:var(--cloud);
+    display:grid;place-items:center}
+  .opt.sel .ic{background:var(--yellow)}
+  .opt .tx{flex:1;min-width:0}
+  .opt .tx b{display:block;font-weight:700;font-size:15.5px}
+  .opt .tx small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+  .opt .chk{flex:none;width:22px;height:22px;border-radius:999px;border:2px solid var(--line-strong);
+    display:grid;place-items:center;transition:.16s}
+  .opt.sel .chk{border-color:var(--ink);background:var(--ink)}
+  .opt .chk svg{opacity:0;transition:.16s}
+  .opt.sel .chk svg{opacity:1}
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+    font:inherit;font-weight:700;font-size:15.5px;border:none;border-radius:999px;
+    padding:15px 26px;transition:.16s ease;text-decoration:none}
+  .btn-primary{background:var(--yellow);color:var(--ink)}
+  .btn-primary:hover{background:var(--yellow-deep);transform:translateY(-1px);box-shadow:var(--shadow-pop)}
+  .btn-primary:disabled{background:var(--line);color:var(--muted);cursor:not-allowed;
+    transform:none;box-shadow:none}
+  .btn-ghost{background:transparent;color:var(--ink);font-weight:600;padding:15px 10px}
+  .btn-ghost:hover{color:var(--muted)}
+  .btn-block{width:100%}
+  .nav-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:26px}
+
+  /* ---------- Loading ---------- */
+  .loader{padding:60px 24px;text-align:center}
+  .spinner{width:46px;height:46px;border:4px solid var(--line);border-top-color:var(--ink);
+    border-radius:999px;margin:0 auto 22px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- Results ---------- */
+  .res-head{margin-bottom:18px}
+  .res-head .eyebrow{margin-bottom:10px}
+  .res-head h2{font-family:'Archivo',sans-serif;font-weight:800;font-size:25px;letter-spacing:-.01em}
+  .res-head p{font-size:14px;color:var(--muted);margin-top:4px}
+  .van{display:flex;gap:14px;align-items:flex-start;border:1.5px solid var(--line-strong);
+    border-radius:var(--radius-sm);padding:16px;margin-bottom:12px;background:var(--paper);position:relative}
+  .van.top{border-color:var(--ink);box-shadow:0 0 0 3px var(--yellow)}
+  .van .rank{flex:none;width:34px;height:34px;border-radius:9px;background:var(--cloud);
+    font-family:'Archivo',sans-serif;font-weight:800;display:grid;place-items:center;font-size:15px}
+  .van.top .rank{background:var(--yellow)}
+  .van .body{flex:1;min-width:0}
+  .van .name{font-family:'Archivo',sans-serif;font-weight:700;font-size:16.5px;line-height:1.2}
+  .van .price{font-size:13.5px;color:var(--muted);margin-top:2px}
+  .van .price b{color:var(--ink);font-weight:700}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{font-size:11.5px;font-weight:600;color:var(--ink-soft);background:var(--cloud);
+    border-radius:999px;padding:4px 9px}
+  .chip.hl{background:var(--yellow);color:var(--ink)}
+  .match{position:absolute;top:14px;right:14px;text-align:right}
+  .match .pct{font-family:'Archivo',sans-serif;font-weight:800;font-size:18px;line-height:1}
+  .match .lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .toplabel{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.05em;color:var(--ink);background:var(--yellow);
+    padding:3px 8px;border-radius:6px;margin-bottom:8px}
+
+  /* ---------- Teaser (locked) ---------- */
+  .tease .van{overflow:hidden}
+  .van.locked .name,.van.locked .price,.van.locked .chips{
+    filter:blur(6px);user-select:none;pointer-events:none}
+  .van.locked .match .pct{filter:blur(7px)}
+  .tease-hint{display:flex;align-items:center;justify-content:center;gap:7px;
+    font-size:12.5px;font-weight:600;color:var(--muted);text-align:center;
+    margin:2px 0 20px}
+  .success-banner{display:flex;align-items:center;gap:10px;background:var(--yellow);
+    color:var(--ink);border-radius:12px;padding:13px 16px;font-weight:600;font-size:13.5px;
+    margin-bottom:20px}
+  .success-banner svg{flex:none}
+
+  /* ---------- Lead form ---------- */
+  .lead-box{margin-top:24px;border:1.5px solid var(--ink);border-radius:var(--radius);
+    padding:22px 20px;background:var(--ink);color:#fff}
+  .lead-box h3{font-family:'Archivo',sans-serif;font-weight:800;font-size:20px;margin-bottom:6px}
+  .lead-box .sub{font-size:13.5px;color:#c9c9c4;margin-bottom:18px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:12.5px;font-weight:600;color:#e8e8e3;margin-bottom:6px}
+  .field input{width:100%;font:inherit;font-size:15px;color:#fff;background:#242424;
+    border:1.5px solid #3a3a3a;border-radius:11px;padding:13px 14px;transition:.16s}
+  .field input::placeholder{color:#7a7a76}
+  .field input:focus{outline:none;border-color:var(--yellow);box-shadow:0 0 0 3px rgba(229,254,1,.25)}
+  .field input.err{border-color:#ff6b6b}
+  .seg-pills{display:flex;gap:8px}
+  .pill{flex:1;cursor:pointer;font:inherit;font-weight:600;font-size:14px;color:#e8e8e3;
+    background:#242424;border:1.5px solid #3a3a3a;border-radius:11px;padding:12px 8px;transition:.16s}
+  .pill:hover{border-color:#5a5a56}
+  .pill.sel{background:var(--yellow);color:var(--ink);border-color:var(--yellow)}
+  .seg-pills.err .pill{border-color:#ff6b6b}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin:6px 0 18px;cursor:pointer}
+  .consent input{flex:none;margin-top:3px;width:18px;height:18px;accent-color:var(--yellow)}
+  .consent span{font-size:12px;color:#bdbdb8;line-height:1.5}
+  .consent a{color:var(--yellow);text-decoration:underline}
+  .err-msg{font-size:12px;color:#ff8a8a;margin-top:6px;display:none}
+  .err-msg.show{display:block}
+
+  /* ---------- Thank you ---------- */
+  .thanks{text-align:center;padding:46px 24px}
+  .thanks .ok-ic{width:64px;height:64px;border-radius:999px;background:var(--yellow);
+    display:grid;place-items:center;margin:0 auto 22px}
+  .thanks h2{font-family:'Archivo',sans-serif;font-weight:800;font-size:26px;margin-bottom:10px}
+  .thanks p{font-size:15px;color:var(--ink-soft);max-width:40ch;margin:0 auto 8px}
+
+  .foot{text-align:center;font-size:11.5px;color:var(--muted);margin-top:20px}
+  .foot a{color:var(--muted)}
+
+  .hidden{display:none!important}
+  .fade{animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <!-- LOGO: erstat denne wordmark med rigtigt carzilla.dk SVG/PNG -->
+    <a class="logo" href="#" aria-label="Carzilla">
+      <span class="mark"><span>CAR</span></span>ZILLA
+    </a>
+    <span class="badge">Varebil-guide</span>
+  </div>
+
+  <div class="card" id="card">
+
+    <!-- ===== SCREEN: HERO ===== -->
+    <section class="screen card-pad" data-screen="hero">
+      <span class="eyebrow">Gratis · 2 minutter</span>
+      <h1>Find din næste <span class="u">varebil</span> på 2 minutter.</h1>
+      <p class="lead">Fortæl os hvad du har brug for, så finder vi de bedste matches til dig blandt alle nye varebiler på markedet.</p>
+      <ul class="hero-points">
+        <li>${ICON_check}<span>Uafhængig sammenligning af alle mærker</span></li>
+        <li>${ICON_check}<span>Skræddersyet til dit behov — drivmiddel, størrelse, træk</span></li>
+        <li>${ICON_check}<span>Carzilla finder det bedste tilbud til dig</span></li>
+      </ul>
+      <button class="btn btn-primary btn-block" data-action="start">Start guiden ${ICON_arrow}</button>
+      <p class="foot" style="margin-top:14px">Helt uforpligtende. Ingen oprettelse nødvendig.</p>
+    </section>
+
+    <!-- ===== SCREEN: QUESTIONS (progress + dynamic) ===== -->
+    <section class="screen hidden" data-screen="quiz">
+      <div class="progress" id="progress"></div>
+      <div class="step-meta"><span id="stepLabel"></span><span id="stepCount"></span></div>
+      <div class="card-pad" id="quizBody"></div>
+    </section>
+
+    <!-- ===== SCREEN: LOADING ===== -->
+    <section class="screen hidden" data-screen="loading">
+      <div class="loader">
+        <div class="spinner"></div>
+        <div class="q-title" style="font-size:20px">Finder dine bedste matches…</div>
+        <p class="q-sub" style="margin:6px 0 0">Sammenligner 352 varebiler</p>
+      </div>
+    </section>
+
+    <!-- ===== SCREEN: GATE (teaser + lead capture) ===== -->
+    <section class="screen hidden card-pad" data-screen="gate">
+      <div class="res-head">
+        <span class="eyebrow">${ICON_lock} 3 matches fundet</span>
+        <h2>Dine 3 bedste varebiler er klar</h2>
+        <p id="gateSummary"></p>
+      </div>
+
+      <div id="teaseList" class="tease"></div>
+      <div class="tease-hint">${ICON_lock} Lås op for at se navne, priser og din match-score</div>
+
+      <div class="lead-box">
+        <h3>Se dine 3 matches</h3>
+        <p class="sub">Indtast dine oplysninger for at låse op for dine matches — og få de skarpeste priser og leasingtilbud fra Carzilla. Helt uforpligtende.</p>
+        <form id="leadForm" novalidate>
+          <div class="field">
+            <label for="lname">Navn</label>
+            <input id="lname" name="name" type="text" placeholder="Dit fulde navn" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label>Skal du købe eller lease din næste varebil?</label>
+            <div class="seg-pills" id="acqPills">
+              <button type="button" class="pill" data-acq="Køb">Køb</button>
+              <button type="button" class="pill" data-acq="Lease">Lease</button>
+              <button type="button" class="pill" data-acq="Ved ikke">Ved ikke</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="phone">Telefonnummer</label>
+            <input id="phone" name="phone" type="tel" placeholder="F.eks. 12 34 56 78" autocomplete="tel" inputmode="tel" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" placeholder="dig@firma.dk" autocomplete="email" inputmode="email" />
+          </div>
+          <label class="consent">
+            <input type="checkbox" id="consent" />
+            <span>Jeg accepterer, at Carzilla må kontakte mig om varebiler og opbevare mine oplysninger jf. <a href="#" target="_blank" rel="noopener">privatlivspolitikken</a>.</span>
+          </label>
+          <div class="err-msg" id="formErr">Udfyld venligst alle felter korrekt og accepter samtykket.</div>
+          <button class="btn btn-primary btn-block" type="submit">Lås op for mine 3 matches ${ICON_arrow}</button>
+        </form>
+      </div>
+
+      <div class="nav-row">
+        <button class="btn btn-ghost" data-action="restart">${ICON_back} Start forfra</button>
+      </div>
+    </section>
+
+    <!-- ===== SCREEN: RESULTS (unlocked) ===== -->
+    <section class="screen hidden card-pad" data-screen="results">
+      <div class="success-banner">${ICON_check}<span>Tak! En rådgiver fra Carzilla kontakter dig snart med de bedste tilbud.</span></div>
+      <div class="res-head">
+        <span class="eyebrow">Dit resultat</span>
+        <h2>Dine 3 bedste matches</h2>
+        <p id="resSummary"></p>
+      </div>
+      <div id="vanList"></div>
+
+      <div class="nav-row">
+        <button class="btn btn-ghost" data-action="restart">${ICON_back} Lav en ny søgning</button>
+      </div>
+    </section>
+
+  </div>
+
+  <p class="foot">CARZILLA · din uafhængige flådeansvarlige &nbsp;·&nbsp; <a href="#">carzilla.dk</a></p>
+</div>
+
+<script>
+/* ============================================================
+   ICONS (inline svg)
+   ============================================================ */
+const ICONS = {
+  check:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="#E5FE01"/><path d="M7 12.5l3 3 7-7" stroke="#181818" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  arrow:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#181818" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  back:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  tick:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-10" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  bigcheck:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-10" stroke="#181818" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  bolt:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" stroke="#181818" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  fuel:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 21h10V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16zM6 8h4" stroke="#181818" stroke-width="1.7" stroke-linecap="round"/><path d="M13 9h3a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3" stroke="#181818" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  hybrid:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M11 3L5 13h4l-1 8 8-11h-4l1-7z" stroke="#181818" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="10" stroke="#181818" stroke-width="1.2" opacity=".35"/></svg>',
+  vanS:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="14" height="8" rx="1.5" stroke="#181818" stroke-width="1.7"/><circle cx="8" cy="17" r="1.6" fill="#181818"/><circle cx="15" cy="17" r="1.6" fill="#181818"/></svg>',
+  vanM:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M2 7h11v9H2zM13 9h4l3 3v4h-7z" stroke="#181818" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="#181818"/><circle cx="17" cy="17" r="1.6" fill="#181818"/></svg>',
+  vanL:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M2 5h14v11H2zM16 8h2.5l2.5 3.5V16H16z" stroke="#181818" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="#181818"/><circle cx="18" cy="17" r="1.6" fill="#181818"/></svg>',
+  tow:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="9" y="7" width="12" height="8" rx="1.5" stroke="#181818" stroke-width="1.7"/><path d="M9 13H4l-2 4" stroke="#181818" stroke-width="1.7" stroke-linecap="round"/><circle cx="14" cy="17" r="1.6" fill="#181818"/></svg>',
+  no:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#181818" stroke-width="1.7"/><path d="M6 18L18 6" stroke="#181818" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  weight:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M8 7a4 4 0 1 1 8 0M6 7h12l2 13H4L6 7z" stroke="#181818" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  lock:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px"><rect x="4" y="10" width="16" height="11" rx="2" stroke="#181818" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="#181818" stroke-width="2"/></svg>',
+  locklg:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="11" rx="2" stroke="#181818" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="#181818" stroke-width="1.8"/></svg>'
+};
+// inject hero/static icons
+document.body.innerHTML = document.body.innerHTML
+  .replaceAll('${ICON_check}',ICONS.check)
+  .replaceAll('${ICON_arrow}',ICONS.arrow)
+  .replaceAll('${ICON_back}',ICONS.back)
+  .replaceAll('${ICON_bigcheck}',ICONS.bigcheck)
+  .replaceAll('${ICON_lock}',ICONS.lock);
+
+/* ============================================================
+   MOCK DATA — repræsentativt udsnit (erstattes af match_vans RPC)
+   ============================================================ */
+const MOCK_VANS = [
+  {brand:'Renault',  model:'Kangoo E-Tech',      fuel:'El',     size:'Small',  tow:0,    price:215000, range:285},
+  {brand:'Citroën',  model:'ë-Berlingo',         fuel:'El',     size:'Small',  tow:750,  price:230000, range:280},
+  {brand:'Ford',     model:'Transit Courier',    fuel:'Diesel', size:'Small',  tow:1000, price:175000, range:null},
+  {brand:'VW',       model:'Caddy Cargo TDI',    fuel:'Diesel', size:'Small',  tow:1500, price:195000, range:null},
+  {brand:'Toyota',   model:'Proace Electric',    fuel:'El',     size:'Medium', tow:1000, price:330000, range:320},
+  {brand:'Peugeot',  model:'e-Expert',           fuel:'El',     size:'Medium', tow:1000, price:320000, range:330},
+  {brand:'Mercedes', model:'eVito',              fuel:'El',     size:'Medium', tow:0,    price:360000, range:300},
+  {brand:'Ford',     model:'Transit Custom TDCi',fuel:'Diesel', size:'Medium', tow:2500, price:245000, range:null},
+  {brand:'VW',       model:'Transporter TDI',    fuel:'Diesel', size:'Medium', tow:2500, price:265000, range:null},
+  {brand:'Ford',     model:'Transit Custom PHEV',fuel:'Plug-in hybrid', size:'Medium', tow:2000, price:360000, range:50},
+  {brand:'Ford',     model:'E-Transit',          fuel:'El',     size:'Large',  tow:750,  price:420000, range:310},
+  {brand:'Fiat',     model:'E-Ducato',           fuel:'El',     size:'Large',  tow:2400, price:460000, range:280},
+  {brand:'Maxus',    model:'eDeliver 9',         fuel:'El',     size:'Large',  tow:0,    price:400000, range:280},
+  {brand:'Mercedes', model:'Sprinter Diesel',    fuel:'Diesel', size:'Large',  tow:3500, price:350000, range:null},
+  {brand:'VW',       model:'Crafter TDI',        fuel:'Diesel', size:'Large',  tow:3500, price:360000, range:null}
+];
+
+/* ============================================================
+   GUIDE FLOW
+   ============================================================ */
+const SIZE_ORDER = {Small:0, Medium:1, Large:2};
+const TOW_NEED   = {op750:750, t1500:1500, t2000:2000, plus2000:2500};
+
+const QUESTIONS = [
+  {
+    key:'fuel', label:'Drivmiddel', title:'Hvilket drivmiddel ønsker du?',
+    sub:'Vælg den type der passer bedst til jeres kørsel.',
+    opts:[
+      {v:'El',              ic:ICONS.bolt,   b:'El',              s:'Lave driftsomkostninger, grøn profil'},
+      {v:'Diesel',          ic:ICONS.fuel,   b:'Diesel',         s:'Lang rækkevidde, høj trækkraft'},
+      {v:'Plug-in hybrid',  ic:ICONS.hybrid, b:'Plug-in hybrid', s:'El i byen, forbrænding på langturen'},
+      {v:'Benzin',          ic:ICONS.fuel,   b:'Benzin',         s:'Lav anskaffelsespris'}
+    ]
+  },
+  {
+    key:'size', label:'Størrelse', title:'Hvor stor en varebil har du brug for?',
+    sub:'Tænk på lastrum og hvor du skal parkere.',
+    opts:[
+      {v:'Small',  ic:ICONS.vanS, b:'Kompakt', s:'Bymæssig, nem at parkere'},
+      {v:'Medium', ic:ICONS.vanM, b:'Mellem',  s:'Alsidig — håndværker-favoritten'},
+      {v:'Large',  ic:ICONS.vanL, b:'Stor',    s:'Maks. lastrum og volumen'}
+    ]
+  },
+  {
+    key:'tow', label:'Anhængertræk', title:'Skal varebilen kunne trække?',
+    sub:'F.eks. trailer, maskiner eller materiel.',
+    opts:[
+      {v:'yes', ic:ICONS.tow, b:'Ja, den skal kunne trække', s:'Vi matcher på trækkapacitet'},
+      {v:'no',  ic:ICONS.no,  b:'Nej, ikke nødvendigt',      s:'Træk vægter ikke i matchet'}
+    ],
+    two:true
+  },
+  {
+    key:'towWeight', label:'Trækvægt', title:'Hvor meget skal den kunne trække?',
+    sub:'Vælg den maksimale vægt du forventer at trække.',
+    showIf:(s)=>s.tow==='yes',
+    opts:[
+      {v:'op750',    ic:ICONS.weight, b:'Op til 750 kg',      s:'Lille trailer'},
+      {v:'t1500',    ic:ICONS.weight, b:'751–1.500 kg',       s:'Mellem trailer'},
+      {v:'t2000',    ic:ICONS.weight, b:'1.501–2.000 kg',     s:'Stor trailer'},
+      {v:'plus2000', ic:ICONS.weight, b:'Over 2.000 kg',      s:'Tung trailer / maskiner'}
+    ]
+  }
+];
+
+const state = {fuel:null, size:null, tow:null, towWeight:null};
+let qIndex = 0;
+let acquisition = null; // Køb / Lease / Ved ikke (lead-kvalificering)
+
+function activeQuestions(){ return QUESTIONS.filter(q=>!q.showIf || q.showIf(state)); }
+
+function show(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));
+  const el = document.querySelector(`[data-screen="${name}"]`);
+  el.classList.remove('hidden'); el.classList.add('fade');
+  if (typeof signalResize==='function') signalResize();
+}
+
+function renderQuiz(){
+  const qs = activeQuestions();
+  if (qIndex >= qs.length){ runMatch(); return; }
+  const q = qs[qIndex];
+
+  // progress
+  const prog = document.getElementById('progress');
+  prog.innerHTML = qs.map((_,i)=>{
+    const cls = i<qIndex?'done':(i===qIndex?'active':'');
+    return `<div class="seg ${cls}"><i></i></div>`;
+  }).join('');
+  document.getElementById('stepLabel').textContent = q.label;
+  document.getElementById('stepCount').textContent = `Trin ${qIndex+1} af ${qs.length}`;
+
+  const cur = state[q.key];
+  const body = document.getElementById('quizBody');
+  body.innerHTML = `
+    <div class="q-title">${q.title}</div>
+    <div class="q-sub">${q.sub}</div>
+    <div class="opts ${q.two?'two':''}">
+      ${q.opts.map(o=>`
+        <button class="opt ${cur===o.v?'sel':''}" data-val="${o.v}">
+          <span class="ic">${o.ic}</span>
+          <span class="tx"><b>${o.b}</b><small>${o.s}</small></span>
+          <span class="chk">${ICONS.tick}</span>
+        </button>`).join('')}
+    </div>
+    <div class="nav-row">
+      <button class="btn btn-ghost" data-action="prev">${ICONS.back} Tilbage</button>
+      <button class="btn btn-primary" data-action="next" ${cur?'':'disabled'}>Næste ${ICONS.arrow}</button>
+    </div>`;
+
+  body.querySelectorAll('.opt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state[q.key] = btn.dataset.val;
+      if (q.key==='tow' && btn.dataset.val==='no') state.towWeight=null;
+      renderQuiz();
+      // auto-advance for snappy feel
+      setTimeout(()=>{ if(state[q.key]) goNext(); }, 180);
+    });
+  });
+  body.querySelector('[data-action="prev"]').addEventListener('click', goPrev);
+  body.querySelector('[data-action="next"]').addEventListener('click', goNext);
+  if (typeof signalResize==='function') signalResize();
+}
+
+function goNext(){
+  const qs = activeQuestions();
+  if (!state[qs[qIndex].key]) return;
+  qIndex++;
+  if (qIndex >= qs.length){ runMatch(); } else { renderQuiz(); }
+}
+function goPrev(){
+  if (qIndex===0){ show('hero'); return; }
+  qIndex--; renderQuiz();
+}
+
+/* ============================================================
+   SOFT WEIGHTED MATCH (svarer til van_insights.match_vans-logikken)
+   ============================================================ */
+function scoreVan(v){
+  let score=0;
+  // Fuel (max 40)
+  const elec = ['El','Plug-in hybrid'];
+  if (v.fuel===state.fuel) score+=40;
+  else if (elec.includes(v.fuel) && elec.includes(state.fuel)) score+=18;
+  else score+=4;
+  // Size (max 30)
+  const d = Math.abs(SIZE_ORDER[v.size]-SIZE_ORDER[state.size]);
+  score += d===0?30 : d===1?16 : 6;
+  // Tow (max 30)
+  if (state.tow==='yes'){
+    const need = TOW_NEED[state.towWeight]||0;
+    score += v.tow>=need ? 30 : Math.round(30*Math.max(0,v.tow/need)*0.9);
+  } else {
+    score += 30; // alle kvalificerer når træk er irrelevant
+  }
+  return Math.min(100, score);
+}
+
+function reasons(v){
+  const out=[];
+  out.push({t:v.fuel, hl:v.fuel===state.fuel});
+  const sizeLbl={Small:'Kompakt',Medium:'Mellem',Large:'Stor'}[v.size];
+  out.push({t:sizeLbl, hl:v.size===state.size});
+  if (state.tow==='yes'){
+    const need=TOW_NEED[state.towWeight]||0;
+    out.push({t:v.tow>0?`Trækker ${v.tow.toLocaleString('da-DK')} kg`:'Ingen træk', hl:v.tow>=need});
+  } else if (v.tow>0){
+    out.push({t:`Træk ${v.tow.toLocaleString('da-DK')} kg`, hl:false});
+  }
+  if (v.range) out.push({t:`${v.range} km rækkevidde`, hl:false});
+  return out;
+}
+
+let lastRanked = [];
+
+function summaryText(){
+  const fuelTxt = state.fuel;
+  const sizeTxt = {Small:'kompakt',Medium:'mellem',Large:'stor'}[state.size];
+  const towTxt = state.tow==='yes'
+    ? ({op750:'op til 750 kg',t1500:'751–1.500 kg',t2000:'1.501–2.000 kg',plus2000:'over 2.000 kg'}[state.towWeight])
+    : null;
+  return `Baseret på: ${fuelTxt}, ${sizeTxt} størrelse${towTxt?`, træk ${towTxt}`:''}.`;
+}
+
+function vanCardHTML(r,i,locked){
+  const v=r.v;
+  const chips = reasons(v).map(c=>`<span class="chip ${c.hl?'hl':''}">${c.t}</span>`).join('');
+  return `
+    <div class="van ${i===0?'top':''} ${locked?'locked':''}">
+      <div class="rank">${i+1}</div>
+      <div class="body">
+        ${i===0?`<span class="toplabel">${ICONS.check} Bedste match</span>`:''}
+        <div class="name">${v.brand} ${v.model}</div>
+        <div class="price">Fra <b>${v.price.toLocaleString('da-DK')} kr.</b></div>
+        <div class="chips">${chips}</div>
+      </div>
+      <div class="match"><div class="pct">${r.score}%</div><div class="lbl">Match</div></div>
+    </div>`;
+}
+
+function runMatch(){
+  show('loading');
+  if (typeof signalResize==='function') signalResize();
+  setTimeout(()=>{
+    lastRanked = MOCK_VANS.map(v=>({v,score:scoreVan(v)}))
+      .sort((a,b)=> b.score-a.score || a.v.price-b.v.price)
+      .slice(0,3);
+    renderTease(lastRanked);   // vis blurret teaser bag gaten
+    show('gate');
+  }, 1100);
+}
+
+function renderTease(ranked){
+  document.getElementById('gateSummary').textContent = summaryText();
+  document.getElementById('teaseList').innerHTML = ranked.map((r,i)=>vanCardHTML(r,i,true)).join('');
+}
+
+function renderResults(ranked){
+  document.getElementById('resSummary').textContent = summaryText();
+  document.getElementById('vanList').innerHTML = ranked.map((r,i)=>vanCardHTML(r,i,false)).join('');
+}
+
+/* ============================================================
+   LEAD FORM
+   ============================================================ */
+function validEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+function validPhone(s){ return s.replace(/\D/g,'').length>=8; }
+
+function handleLead(e){
+  e.preventDefault();
+  const name=document.getElementById('lname');
+  const phone=document.getElementById('phone');
+  const email=document.getElementById('email');
+  const consent=document.getElementById('consent');
+  const err=document.getElementById('formErr');
+  const acqPills=document.getElementById('acqPills');
+  let ok=true;
+  [name,phone,email].forEach(f=>f.classList.remove('err'));
+  acqPills.classList.remove('err');
+  if(!name.value.trim()){name.classList.add('err');ok=false;}
+  if(!acquisition){acqPills.classList.add('err');ok=false;}
+  if(!validPhone(phone.value)){phone.classList.add('err');ok=false;}
+  if(!validEmail(email.value)){email.classList.add('err');ok=false;}
+  if(!consent.checked) ok=false;
+  if(!ok){ err.classList.add('show'); if(typeof signalResize==='function')signalResize(); return; }
+  err.classList.remove('show');
+
+  // PROTOTYPE: log payloaden der senere POST'es til carzilla-lead Edge Function
+  console.log('LEAD →', {
+    contact:{name:name.value.trim(), phone:phone.value.trim(), email:email.value.trim()},
+    acquisition:acquisition,
+    criteria:{...state},
+    matches:lastRanked.map(r=>`${r.v.brand} ${r.v.model} (${r.score}%)`),
+    consent:{accepted:true, ts:new Date().toISOString()}
+  });
+
+  // Lås op: vis det fulde top-3 resultat
+  renderResults(lastRanked);
+  show('results');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+document.addEventListener('click',(e)=>{
+  const a = e.target.closest('[data-action]');
+  if(!a) return;
+  const act=a.dataset.action;
+  if(act==='start'){ qIndex=0; show('quiz'); renderQuiz(); }
+  if(act==='restart'){
+    Object.keys(state).forEach(k=>state[k]=null); qIndex=0;
+    acquisition=null;
+    document.querySelectorAll('#acqPills .pill').forEach(x=>x.classList.remove('sel'));
+    // ryd lead-formularen
+    ['lname','phone','email'].forEach(id=>{const el=document.getElementById(id); if(el){el.value='';el.classList.remove('err');}});
+    const cb=document.getElementById('consent'); if(cb) cb.checked=false;
+    document.getElementById('acqPills').classList.remove('err');
+    document.getElementById('formErr').classList.remove('show');
+    show('hero');
+  }
+});
+document.querySelectorAll('#acqPills .pill').forEach(p=>{
+  p.addEventListener('click',()=>{
+    acquisition=p.dataset.acq;
+    document.querySelectorAll('#acqPills .pill').forEach(x=>x.classList.toggle('sel', x===p));
+    document.getElementById('acqPills').classList.remove('err');
+  });
+});
+document.getElementById('leadForm').addEventListener('submit', handleLead);
+
+/* ============================================================
+   IFRAME AUTO-RESIZE (cookieless embed på carzilla.dk)
+   ============================================================ */
+function signalResize(){
+  const h = document.documentElement.scrollHeight;
+  if (window.parent && window.parent!==window){
+    window.parent.postMessage({type:'carzilla-guide-height', height:h}, '*');
+  }
+}
+window.addEventListener('load', signalResize);
+window.addEventListener('resize', signalResize);
+new MutationObserver(signalResize).observe(document.body,{subtree:true,childList:true,attributes:true});
+</script>
+</body>
+</html>
