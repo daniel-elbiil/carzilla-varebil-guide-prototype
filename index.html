@@ -159,9 +159,8 @@
 
   /* ---------- Teaser (locked) ---------- */
   .tease .van{overflow:hidden}
-  .van.locked .name,.van.locked .price,.van.locked .chips{
-    filter:blur(6px);user-select:none;pointer-events:none}
-  .van.locked .match .pct{filter:blur(7px)}
+  .van.locked .name,.van.locked .price{
+    filter:blur(5px);user-select:none;pointer-events:none}
   .tease-hint{display:flex;align-items:center;justify-content:center;gap:7px;
     font-size:12.5px;font-weight:600;color:var(--muted);text-align:center;
     margin:2px 0 20px}
@@ -353,25 +352,16 @@ document.body.innerHTML = document.body.innerHTML
   .replaceAll('${ICON_lock}',ICONS.lock);
 
 /* ============================================================
-   MOCK DATA — repræsentativt udsnit (erstattes af match_vans RPC)
+   SUPABASE / API (live data)
+   ------------------------------------------------------------
+   Begge nøgler herunder er PUBLIC (anon) — beregnet til at ligge i
+   browseren. Al skrivning + fulde matches sker server-side (service_role).
    ============================================================ */
-const MOCK_VANS = [
-  {brand:'Renault',  model:'Kangoo E-Tech',      fuel:'El',     size:'Small',  tow:0,    price:215000, range:285},
-  {brand:'Citroën',  model:'ë-Berlingo',         fuel:'El',     size:'Small',  tow:750,  price:230000, range:280},
-  {brand:'Ford',     model:'Transit Courier',    fuel:'Diesel', size:'Small',  tow:1000, price:175000, range:null},
-  {brand:'VW',       model:'Caddy Cargo TDI',    fuel:'Diesel', size:'Small',  tow:1500, price:195000, range:null},
-  {brand:'Toyota',   model:'Proace Electric',    fuel:'El',     size:'Medium', tow:1000, price:330000, range:320},
-  {brand:'Peugeot',  model:'e-Expert',           fuel:'El',     size:'Medium', tow:1000, price:320000, range:330},
-  {brand:'Mercedes', model:'eVito',              fuel:'El',     size:'Medium', tow:0,    price:360000, range:300},
-  {brand:'Ford',     model:'Transit Custom TDCi',fuel:'Diesel', size:'Medium', tow:2500, price:245000, range:null},
-  {brand:'VW',       model:'Transporter TDI',    fuel:'Diesel', size:'Medium', tow:2500, price:265000, range:null},
-  {brand:'Ford',     model:'Transit Custom PHEV',fuel:'Plug-in hybrid', size:'Medium', tow:2000, price:360000, range:50},
-  {brand:'Ford',     model:'E-Transit',          fuel:'El',     size:'Large',  tow:750,  price:420000, range:310},
-  {brand:'Fiat',     model:'E-Ducato',           fuel:'El',     size:'Large',  tow:2400, price:460000, range:280},
-  {brand:'Maxus',    model:'eDeliver 9',         fuel:'El',     size:'Large',  tow:0,    price:400000, range:280},
-  {brand:'Mercedes', model:'Sprinter Diesel',    fuel:'Diesel', size:'Large',  tow:3500, price:350000, range:null},
-  {brand:'VW',       model:'Crafter TDI',        fuel:'Diesel', size:'Large',  tow:3500, price:360000, range:null}
-];
+const SUPA_URL = 'https://ciqjtekeozvthcxizgtm.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcWp0ZWtlb3p2dGhjeGl6Z3RtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MTg5OTQsImV4cCI6MjA4MTM5NDk5NH0.bynb_GePPPmK6gEXAYSKH_c3545x58AcBTkUDbzKE2A';
+const API_HEADERS = { 'apikey': SUPA_ANON, 'Authorization': `Bearer ${SUPA_ANON}`, 'Content-Type': 'application/json' };
+const MATCH_RPC = `${SUPA_URL}/rest/v1/rpc/carzilla_match_vans`;
+const LEAD_ENDPOINT = `${SUPA_URL}/functions/v1/carzilla-lead`;
 
 /* ============================================================
    GUIDE FLOW
@@ -492,90 +482,97 @@ function goPrev(){
 }
 
 /* ============================================================
-   SOFT WEIGHTED MATCH (svarer til van_insights.match_vans-logikken)
+   LIVE MATCH (van_insights via public.carzilla_match_vans + Edge Function)
    ============================================================ */
-function scoreVan(v){
-  let score=0;
-  // Fuel (max 40)
-  const elec = ['El','Plug-in hybrid'];
-  if (v.fuel===state.fuel) score+=40;
-  else if (elec.includes(v.fuel) && elec.includes(state.fuel)) score+=18;
-  else score+=4;
-  // Size (max 30)
-  const d = Math.abs(SIZE_ORDER[v.size]-SIZE_ORDER[state.size]);
-  score += d===0?30 : d===1?16 : 6;
-  // Tow (max 30)
-  if (state.tow==='yes'){
-    const need = TOW_NEED[state.towWeight]||0;
-    score += v.tow>=need ? 30 : Math.round(30*Math.max(0,v.tow/need)*0.9);
-  } else {
-    score += 30; // alle kvalificerer når træk er irrelevant
-  }
-  return Math.min(100, score);
-}
-
-function reasons(v){
-  const out=[];
-  out.push({t:v.fuel, hl:v.fuel===state.fuel});
-  const sizeLbl={Small:'Kompakt',Medium:'Mellem',Large:'Stor'}[v.size];
-  out.push({t:sizeLbl, hl:v.size===state.size});
-  if (state.tow==='yes'){
-    const need=TOW_NEED[state.towWeight]||0;
-    out.push({t:v.tow>0?`Trækker ${v.tow.toLocaleString('da-DK')} kg`:'Ingen træk', hl:v.tow>=need});
-  } else if (v.tow>0){
-    out.push({t:`Træk ${v.tow.toLocaleString('da-DK')} kg`, hl:false});
-  }
-  if (v.range) out.push({t:`${v.range} km rækkevidde`, hl:false});
-  return out;
-}
-
-let lastRanked = [];
+let lastTeaser = [];   // teaser-rækker (ingen navne/priser)
+let lastFull   = [];   // fulde matches efter oplåsning
 
 function summaryText(){
   const fuelTxt = state.fuel;
-  const sizeTxt = {Small:'kompakt',Medium:'mellem',Large:'stor'}[state.size];
+  const sizeTxt = {Small:'kompakt',Medium:'mellem',Large:'stor'}[state.size] || state.size;
   const towTxt = state.tow==='yes'
     ? ({op750:'op til 750 kg',t1500:'751–1.500 kg',t2000:'1.501–2.000 kg',plus2000:'over 2.000 kg'}[state.towWeight])
     : null;
   return `Baseret på: ${fuelTxt}, ${sizeTxt} størrelse${towTxt?`, træk ${towTxt}`:''}.`;
 }
 
-function vanCardHTML(r,i,locked){
-  const v=r.v;
-  const chips = reasons(v).map(c=>`<span class="chip ${c.hl?'hl':''}">${c.t}</span>`).join('');
+// chips fra et match-objekt (samme felter i teaser + fuld)
+function chipObjs(m){
+  const out=[];
+  const fuel = m.fuel_canon || m.fuel_type;
+  if (fuel) out.push({t:fuel, hl: fuel===state.fuel});
+  if (m.size_label) out.push({t:m.size_label, hl: m.segment===state.size});
+  if (state.tow==='yes' && m.tow_chip && m.tow_chip!=='NA') out.push({t:`Trækker ${m.tow_chip}`, hl:true});
+  if (m.range_km) out.push({t:`${Math.round(Number(m.range_km))} km rækkevidde`, hl:false});
+  return out;
+}
+function chipsHTML(m){ return chipObjs(m).map(c=>`<span class="chip ${c.hl?'hl':''}">${c.t}</span>`).join(''); }
+
+function teaseCardHTML(m,i){
   return `
-    <div class="van ${i===0?'top':''} ${locked?'locked':''}">
+    <div class="van ${i===0?'top':''} locked">
       <div class="rank">${i+1}</div>
       <div class="body">
         ${i===0?`<span class="toplabel">${ICONS.check} Bedste match</span>`:''}
-        <div class="name">${v.brand} ${v.model}</div>
-        <div class="price">Fra <b>${v.price.toLocaleString('da-DK')} kr.</b></div>
-        <div class="chips">${chips}</div>
+        <div class="name">●●●●●●●● ●●●●●</div>
+        <div class="price">Fra <b>●●●.●●● kr.</b></div>
+        <div class="chips">${chipsHTML(m)}</div>
       </div>
-      <div class="match"><div class="pct">${r.score}%</div><div class="lbl">Match</div></div>
+      <div class="match"><div class="pct">${m.match_score}%</div><div class="lbl">Match</div></div>
     </div>`;
 }
 
-function runMatch(){
+function fullCardHTML(m,i){
+  const price = (m.price!=null) ? `Fra <b>${Number(m.price).toLocaleString('da-DK')} kr.</b>` : '';
+  return `
+    <div class="van ${i===0?'top':''}">
+      <div class="rank">${i+1}</div>
+      <div class="body">
+        ${i===0?`<span class="toplabel">${ICONS.check} Bedste match</span>`:''}
+        <div class="name">${m.brand} ${m.model}</div>
+        <div class="price">${price}</div>
+        <div class="chips">${chipsHTML(m)}</div>
+      </div>
+      <div class="match"><div class="pct">${m.match_score}%</div><div class="lbl">Match</div></div>
+    </div>`;
+}
+
+function rpcBody(){
+  return JSON.stringify({
+    p_fuel: state.fuel,
+    p_size: state.size,
+    p_tow: state.tow || 'no',
+    p_tow_weight: state.towWeight || null,
+    p_limit: 3
+  });
+}
+
+async function runMatch(){
   show('loading');
   if (typeof signalResize==='function') signalResize();
-  setTimeout(()=>{
-    lastRanked = MOCK_VANS.map(v=>({v,score:scoreVan(v)}))
-      .sort((a,b)=> b.score-a.score || a.v.price-b.v.price)
-      .slice(0,3);
-    renderTease(lastRanked);   // vis blurret teaser bag gaten
-    show('gate');
-  }, 1100);
+  try {
+    const res = await fetch(MATCH_RPC, { method:'POST', headers:API_HEADERS, body: rpcBody() });
+    if (!res.ok) throw new Error('match http '+res.status);
+    lastTeaser = await res.json();
+  } catch (err) {
+    console.error('match failed', err);
+    lastTeaser = [];
+  }
+  renderTease(lastTeaser);
+  show('gate');
 }
 
-function renderTease(ranked){
+function renderTease(rows){
   document.getElementById('gateSummary').textContent = summaryText();
-  document.getElementById('teaseList').innerHTML = ranked.map((r,i)=>vanCardHTML(r,i,true)).join('');
+  const el = document.getElementById('teaseList');
+  el.innerHTML = (rows && rows.length)
+    ? rows.map((m,i)=>teaseCardHTML(m,i)).join('')
+    : `<div class="q-sub" style="text-align:center;padding:8px 0">Vi fandt matches til dig — udfyld nedenfor for at se dem.</div>`;
 }
 
-function renderResults(ranked){
+function renderResults(rows){
   document.getElementById('resSummary').textContent = summaryText();
-  document.getElementById('vanList').innerHTML = ranked.map((r,i)=>vanCardHTML(r,i,false)).join('');
+  document.getElementById('vanList').innerHTML = (rows||[]).map((m,i)=>fullCardHTML(m,i)).join('');
 }
 
 /* ============================================================
@@ -584,7 +581,7 @@ function renderResults(ranked){
 function validEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
 function validPhone(s){ return s.replace(/\D/g,'').length>=8; }
 
-function handleLead(e){
+async function handleLead(e){
   e.preventDefault();
   const name=document.getElementById('lname');
   const phone=document.getElementById('phone');
@@ -600,22 +597,43 @@ function handleLead(e){
   if(!validPhone(phone.value)){phone.classList.add('err');ok=false;}
   if(!validEmail(email.value)){email.classList.add('err');ok=false;}
   if(!consent.checked) ok=false;
-  if(!ok){ err.classList.add('show'); if(typeof signalResize==='function')signalResize(); return; }
+  if(!ok){
+    err.textContent='Udfyld venligst alle felter korrekt og accepter samtykket.';
+    err.classList.add('show'); if(typeof signalResize==='function')signalResize(); return;
+  }
   err.classList.remove('show');
 
-  // PROTOTYPE: log payloaden der senere POST'es til carzilla-lead Edge Function
-  console.log('LEAD →', {
-    contact:{name:name.value.trim(), phone:phone.value.trim(), email:email.value.trim()},
-    acquisition:acquisition,
-    criteria:{...state},
-    matches:lastRanked.map(r=>`${r.v.brand} ${r.v.model} (${r.score}%)`),
-    consent:{accepted:true, ts:new Date().toISOString()}
-  });
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const origTxt = submitBtn ? submitBtn.innerHTML : '';
+  if(submitBtn){ submitBtn.disabled=true; submitBtn.innerHTML='Låser op…'; }
 
-  // Lås op: vis det fulde top-3 resultat
-  renderResults(lastRanked);
-  show('results');
-  window.scrollTo({top:0, behavior:'smooth'});
+  const consentText = (document.querySelector('.consent span')?.innerText || '').trim()
+    || 'Jeg accepterer, at Carzilla må kontakte mig om varebiler.';
+
+  const payload = {
+    contact:{ name:name.value.trim(), phone:phone.value.trim(), email:email.value.trim() },
+    acquisition,
+    criteria:{ ...state },
+    consent:{ accepted:true, text:consentText, ts:new Date().toISOString() },
+    source:'carzilla-prototype'
+  };
+
+  try {
+    const res = await fetch(LEAD_ENDPOINT, { method:'POST', headers:API_HEADERS, body:JSON.stringify(payload) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.ok) throw new Error(data.error || ('http '+res.status));
+    lastFull = data.matches || [];
+    renderResults(lastFull);   // lås op med serverens fulde matches
+    show('results');
+    window.scrollTo({top:0, behavior:'smooth'});
+  } catch(err2){
+    console.error('lead submit failed', err2);
+    err.textContent='Noget gik galt — prøv venligst igen om lidt.';
+    err.classList.add('show');
+    if(typeof signalResize==='function') signalResize();
+  } finally {
+    if(submitBtn){ submitBtn.disabled=false; submitBtn.innerHTML=origTxt; }
+  }
 }
 
 /* ============================================================
