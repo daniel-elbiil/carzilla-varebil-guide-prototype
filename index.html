@@ -267,6 +267,12 @@
         <h3>Se dine 3 matches</h3>
         <p class="sub">Indtast dine oplysninger for at låse op for dine matches — og få de skarpeste priser og leasingtilbud fra Carzilla. Helt uforpligtende.</p>
         <form id="leadForm" novalidate>
+          <!-- honeypot: skjult for mennesker, bots udfylder det → afvises server-side -->
+          <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden">
+            <label>Firma (lad være tomt)
+              <input id="company" name="company" type="text" tabindex="-1" autocomplete="off" />
+            </label>
+          </div>
           <div class="field">
             <label for="lname">Navn</label>
             <input id="lname" name="name" type="text" placeholder="Dit fulde navn" autocomplete="name" />
@@ -615,12 +621,18 @@ async function handleLead(e){
     acquisition,
     criteria:{ ...state },
     consent:{ accepted:true, text:consentText, ts:new Date().toISOString() },
+    company: document.getElementById('company')?.value || '',   // honeypot (skal være tom)
     source:'carzilla-prototype'
   };
 
   try {
     const res = await fetch(LEAD_ENDPOINT, { method:'POST', headers:API_HEADERS, body:JSON.stringify(payload) });
     const data = await res.json().catch(()=>({}));
+    if(res.status===429 || data.error==='rate_limited'){
+      err.textContent='Du har sendt for mange forespørgsler. Vent et øjeblik og prøv igen.';
+      err.classList.add('show'); if(typeof signalResize==='function')signalResize();
+      return;
+    }
     if(!res.ok || !data.ok) throw new Error(data.error || ('http '+res.status));
     lastFull = data.matches || [];
     renderResults(lastFull);   // lås op med serverens fulde matches
